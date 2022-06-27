@@ -17,7 +17,7 @@ class NrnSimulator(object):
     """Neuron simulator"""
 
     def __init__(self, dt=None, cvode_active=True, cvode_minstep=None,
-                 random123_globalindex=None, mechanisms_directory=None):
+                 random123_globalindex=None, mechanisms_directory=None, atol=1e-4):
         """Constructor
 
         Args:
@@ -56,6 +56,7 @@ class NrnSimulator(object):
         self.cvode_active = cvode_active
 
         self.random123_globalindex = random123_globalindex
+        self.atol = atol
 
     @property
     def cvode(self):
@@ -161,6 +162,8 @@ class NrnSimulator(object):
         if random123_globalindex is not None:
             rng = self.neuron.h.Random()
             rng.Random123_globalindex(random123_globalindex)
+
+        self.neuron.h.CVode().atol(self.atol)
 
         try:
             self.neuron.h.run()
