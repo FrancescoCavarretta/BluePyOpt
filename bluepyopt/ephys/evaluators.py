@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 import bluepyopt as bpopt
 import bluepyopt.tools
-
+import tempfile
+import os
+import numpy as np
 
 class CellEvaluator(bpopt.evaluators.Evaluator):
 
@@ -42,7 +44,10 @@ class CellEvaluator(bpopt.evaluators.Evaluator):
             isolate_protocols=None,
             sim=None,
             use_params_for_seed=False,
-            timeout=None):
+            timeout=None,
+            use_process=False,
+            py_protocol_filename=None,
+            command_line_fmt='python3 %s %s --etype %s --param_file %s --response_file %s'):
         """Constructor
 
         Args:
@@ -86,6 +91,10 @@ class CellEvaluator(bpopt.evaluators.Evaluator):
         self.isolate_protocols = isolate_protocols
         self.timeout = timeout
         self.use_params_for_seed = use_params_for_seed
+        self.use_process = use_process
+        self.py_protocol_filename = py_protocol_filename
+        self.command_line_fmt = command_line_fmt
+        
 
     def param_dict(self, param_array):
         """Convert param_array in param_dict"""
@@ -170,17 +179,34 @@ class CellEvaluator(bpopt.evaluators.Evaluator):
 
     def run_protocols(self, protocols, param_values):
         """Run a set of protocols"""
-
         responses = {}
+        if self.use_process:
+            param_file = tempfile.NamedTemporaryFile(prefix="bpo_in_", suffix=".npy").name # parameter file
+            response_file = tempfile.NamedTemporaryFile(prefix="bpo_out_", suffix=".npy").name # response file
+            # store the parameters in a file
+            np.save(param_file, param_values, allow_pickle=True)
+            # simulation execution, generation of responses
+            command_line = self.command_line_fmt % (self.py_protocol_filename,
+                                                    '--coreneuron' if self.sim.coreneuron_active else '',
+                                                    self.cell_model.name,
+                                                    param_file,
+                                                    response_file) # make the command line
+            os.system(command_line) # execute
+            responses = np.load(response_file, allow_pickle=True).tolist() # load the responses
+            os.remove(param_file) # remove the param file
+            os.remove(response_file) # remove the response file
+            
+        else:
+            for protocol in protocols:
+                responses.update(self.run_protocol(
+                    protocol,
+                    param_values=param_values,
+                    isolate=self.isolate_protocols,
+                    timeout=self.timeout))
 
-        for protocol in protocols:
-            responses.update(self.run_protocol(
-                protocol,
-                param_values=param_values,
-                isolate=self.isolate_protocols,
-                timeout=self.timeout))
 
         return responses
+    
 
     def evaluate_with_dicts(self, param_dict=None, target='scores'):
         """Run evaluation with dict as input and output"""

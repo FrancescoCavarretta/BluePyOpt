@@ -17,7 +17,7 @@ class NrnSimulator(object):
     """Neuron simulator"""
 
     def __init__(self, dt=None, cvode_active=True, cvode_minstep=None,
-                 random123_globalindex=None, mechanisms_directory=None, atol=1e-4):
+                 random123_globalindex=None, mechanisms_directory=None, atol=1e-2, coreneuron_active=False):
         """Constructor
 
         Args:
@@ -57,6 +57,7 @@ class NrnSimulator(object):
 
         self.random123_globalindex = random123_globalindex
         self.atol = atol
+        self.coreneuron_active = coreneuron_active
 
     @property
     def cvode(self):
@@ -112,7 +113,24 @@ class NrnSimulator(object):
             )
 
         return neuron
+    
+    @property
+    def coreneuron(self):
+        """Return neuron module"""
 
+        if self.disable_banner and not self.banner_disabled:
+            NrnSimulator._nrn_disable_banner()
+            self.banner_disabled = True
+
+        from neuron import coreneuron  # NOQA
+
+        if self.mechanisms_directory is not None:
+            neuron.load_mechanisms(
+                self.mechanisms_directory, warn_if_already_loaded=False
+            )
+
+        return coreneuron
+    
     def run(
             self,
             tstop=None,
@@ -165,10 +183,29 @@ class NrnSimulator(object):
 
         self.neuron.h.CVode().atol(self.atol)
 
-        try:
-            self.neuron.h.run()
-        except Exception as e:
-            raise NrnSimulatorException('Neuron simulator error', e)
+        if self.coreneuron_active:
+            # use coreneuron
+            self.neuron.h.cvode_active(0)
+            self.neuron.h.cvode.cache_efficient(1)
+            pc = self.neuron.h.ParallelContext(1)
+            self.coreneuron.enable = True
+            self.coreneuron.verbose = 0
+            self.neuron.h.stdinit()
+            
+            try:
+                pc.psolve(tstop)
+            except Exception as e:
+                raise NrnSimulatorException('Neuron simulator error', e)
+            else:
+                pc.done()
+                pc = None
+
+        else:
+            # use regular neuron
+            try:
+                self.neuron.h.run()
+            except Exception as e:
+                raise NrnSimulatorException('Neuron simulator error', e)
 
         if self.cvode_minstep_value is not None:
             self.cvode_minstep = save_minstep
