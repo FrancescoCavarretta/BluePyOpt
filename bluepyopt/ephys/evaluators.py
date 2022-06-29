@@ -192,9 +192,14 @@ class CellEvaluator(bpopt.evaluators.Evaluator):
                                                     param_file,
                                                     response_file) # make the command line
             os.system(command_line) # execute
-            responses = np.load(response_file, allow_pickle=True).tolist() # load the responses
+
+            try:
+                responses = np.load(response_file, allow_pickle=True).tolist() # load the responses
+                os.remove(response_file) # remove the response file
+            except FileNotFoundError:
+                responses = { recording.name:None for protocol in protocols for recording in protocol.recordings }
+                
             os.remove(param_file) # remove the param file
-            os.remove(response_file) # remove the response file
             
         else:
             for protocol in protocols:
